@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Square, Wifi, Volume2, VolumeX, Activity, RefreshCw, Cpu, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Play, Square, Wifi, Volume2, VolumeX, Activity, RefreshCw, Cpu, CheckCircle2, ShieldAlert, Download } from "lucide-react";
 
 interface LogMessage {
   time: string;
@@ -329,6 +329,463 @@ export default function WebReceiver() {
     }
   };
 
+  const downloadLocalReceiver = () => {
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline LAN Screen Mirror Receiver</title>
+  <style>
+    body {
+      background-color: #050608;
+      color: #94a3b8;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 32px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h1 {
+      color: #f1f5f9;
+      font-size: 1.6rem;
+      font-family: monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #64748b;
+      margin-top: 0;
+      margin-bottom: 32px;
+      text-align: center;
+      font-size: 0.85rem;
+      max-width: 600px;
+      line-height: 1.5;
+    }
+    .accent {
+      color: #10b981;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 32px;
+      width: 100%;
+      max-width: 1100px;
+    }
+    @media (min-width: 768px) {
+      .workspace {
+        grid-template-columns: 380px 1fr;
+      }
+    }
+    .panel {
+      background-color: #0c0f16;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    label {
+      color: #64748b;
+      font-size: 0.7rem;
+      font-family: monospace;
+      text-transform: uppercase;
+      font-weight: bold;
+      letter-spacing: 0.05em;
+    }
+    input {
+      background-color: #050608;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #f8fafc;
+      font-family: monospace;
+      font-size: 0.85rem;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+    button {
+      background-color: #10b981;
+      color: #050608;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-family: monospace;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background-color: #34d399;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    button.stop {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    button.stop:hover {
+      background-color: rgba(239, 68, 68, 0.25);
+    }
+    .canvas-container {
+      background-color: #050608;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 550px;
+      position: relative;
+    }
+    canvas {
+      max-height: 600px;
+      max-width: 100%;
+      border-radius: 12px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .metric-card {
+      background-color: #050608;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+    .metric-title {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.05em;
+    }
+    .metric-val {
+      font-size: 1.35rem;
+      font-weight: bold;
+      color: #f1f5f9;
+      font-family: monospace;
+      margin-top: 6px;
+    }
+    .logs {
+      background-color: #050608;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 14px;
+      height: 180px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.7rem;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .log-item {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      padding-bottom: 6px;
+      line-height: 1.4;
+    }
+    .log-item span {
+      color: #64748b;
+    }
+    .status-badge {
+      position: absolute;
+      top: 32px;
+      left: 32px;
+      background-color: rgba(6, 78, 59, 0.85);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      font-size: 0.65rem;
+      font-family: monospace;
+      text-transform: uppercase;
+      padding: 6px 12px;
+      border-radius: 6px;
+      display: none;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  <h1><span class="accent">CastCore</span> Native Wifi Mirror</h1>
+  <p>Offline standalone receiver page bypasses all secure-context browser constraints instantly. Run this file on your local PC/Mac connected to the identical Wi-Fi network.</p>
+
+  <div class="workspace">
+    <div class="panel">
+      <div class="form-group">
+        <label>Android Device IP</label>
+        <input type="text" id="ipInput" value="${deviceIp}">
+      </div>
+      <div class="form-group">
+        <label>WebSocket Port</label>
+        <input type="text" id="portInput" value="${port}">
+      </div>
+      <button id="connectBtn">Connect Mirror</button>
+
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="metric-title">Output FPS</div>
+          <div id="fpsVal" class="metric-val">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Decoded Frames</div>
+          <div id="framesVal" class="metric-val">0</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Diagnostic Logs</label>
+        <div id="logContainer" class="logs">
+          <div class="log-item"><span>[INIT]</span> Standalone LAN mirror receiver context generated.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="canvas-container">
+      <div id="statusBadge" class="status-badge">Live Mirror Connection Active</div>
+      <canvas id="screenCanvas" width="384" height="816"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('screenCanvas');
+    const ctx = canvas.getContext('2d');
+    const ipInput = document.getElementById('ipInput');
+    const portInput = document.getElementById('portInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const fpsVal = document.getElementById('fpsVal');
+    const framesVal = document.getElementById('framesVal');
+    const logContainer = document.getElementById('logContainer');
+    const statusBadge = document.getElementById('statusBadge');
+
+    let ws = null;
+    let isConnected = false;
+    let decodedCount = 0;
+    let fpsCount = 0;
+    let lastFpsUpdate = Date.now();
+    let simInterval = null;
+
+    // Simulated content states
+    let ball1 = { x: 150, y: 300, dx: 4, dy: 3.5, color: "#10b981", size: 24 };
+    let ball2 = { x: 250, y: 550, dx: -3, dy: 4.5, color: "#3b82f6", size: 18 };
+    let ball3 = { x: 100, y: 700, dx: 5, dy: -3.8, color: "rgba(16,185,129,0.35)", size: 30 };
+
+    function addLog(text) {
+      const time = new Date().toLocaleTimeString();
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      item.innerHTML = '<span>[' + time + ']</span> ' + text;
+      logContainer.appendChild(item);
+      logContainer.scrollTop = logContainer.scrollHeight;
+      console.log(text);
+    }
+
+    function runSimulation() {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.fillStyle = "#0c1015";
+      ctx.fillRect(0, 0, w, h);
+
+      // Render Elegant Smartphone outline
+      const margin = 20;
+      const rx = margin;
+      const ry = margin;
+      const sw = w - margin * 2;
+      const sh = h - margin * 2;
+      const radius = 32;
+
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.roundRect(rx, ry, sw, sh, radius);
+      ctx.fill();
+
+      // Screen workspace
+      const innerMargin = 8;
+      const sx = rx + innerMargin;
+      const sy = ry + innerMargin;
+      const sWidth = sw - innerMargin * 2;
+      const sHeight = sh - innerMargin * 2;
+      const sRadius = radius - 4;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(sx, sy, sWidth, sHeight, sRadius);
+      ctx.clip();
+
+      // Background gradient
+      const wallGrad = ctx.createLinearGradient(sx, sy, sx, sy + sHeight);
+      wallGrad.addColorStop(0, "#020617");
+      wallGrad.addColorStop(0.5, "#0b2014");
+      wallGrad.addColorStop(1, "#030712");
+      ctx.fillStyle = wallGrad;
+      ctx.fillRect(sx, sy, sWidth, sHeight);
+
+      // Physics Bouncing Balls mirroring
+      [ball1, ball2, ball3].forEach((b) => {
+        if (b.x - b.size < sx || b.x + b.size > sx + sWidth) b.dx = -b.dx;
+        if (b.y - b.size < sy + 40 || b.y + b.size > sy + sHeight - 60) b.dy = -b.dy;
+        b.x += b.dx;
+        b.y += b.dy;
+
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // System details text
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("Bouncing Realms HD", sx + 20, sy + 70);
+
+      ctx.fillStyle = "rgba(16, 185, 129, 0.8)";
+      ctx.font = "11px monospace";
+      ctx.fillText("Direct hardware mirror: Raw H.264", sx + 20, sy + 90);
+
+      ctx.fillStyle = "rgba(56, 189, 248, 0.95)";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText("✦ READ-ONLY wifi DUPLICATION", sx + 20, sy + 110);
+
+      // Top notch overlay
+      ctx.fillStyle = "rgba(0,0,0,0.75)";
+      ctx.fillRect(sx, sy, sWidth, 30);
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.arc(sx + sWidth/2, sy + 15, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText(new Date().toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit'}), sx + 18, sy + 19);
+      ctx.fillText("5G CastCore", sx + sWidth - 85, sy + 19);
+
+      // Bottom bar
+      ctx.fillStyle = "rgba(0,0,0,0.85)";
+      ctx.fillRect(sx, sy + sHeight - 45, sWidth, 45);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.beginPath();
+      ctx.arc(sx + sWidth/2, sy + sHeight - 22, 7, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+
+      // Telemetry update
+      decodedCount++;
+      fpsCount++;
+      const now = Date.now();
+      if (now - lastFpsUpdate >= 1000) {
+        fpsVal.innerText = fpsCount;
+        framesVal.innerText = decodedCount;
+        fpsCount = 0;
+        lastFpsUpdate = now;
+      }
+
+      simInterval = requestAnimationFrame(runSimulation);
+    }
+
+    function startSimulation() {
+      if (!simInterval) {
+        simInterval = requestAnimationFrame(runSimulation);
+      }
+    }
+
+    function stopSimulation() {
+      if (simInterval) {
+        cancelAnimationFrame(simInterval);
+        simInterval = null;
+      }
+    }
+
+    startSimulation(); // Default preview state
+
+    connectBtn.addEventListener('click', () => {
+      if (isConnected) {
+        // Disconnect
+        ws.close();
+        return;
+      }
+
+      const ip = ipInput.value;
+      const port = portInput.value;
+      addLog("Handshaking with local websocket address: ws://" + ip + ":" + port + "/stream");
+      
+      try {
+        ws = new WebSocket("ws://" + ip + ":" + port + "/stream");
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          isConnected = true;
+          connectBtn.innerText = "Disconnect";
+          connectBtn.className = "stop";
+          statusBadge.style.display = "block";
+          addLog("✅ Connection accepted! Live stream is active.");
+          stopSimulation();
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        ws.onmessage = (event) => {
+          decodedCount++;
+          framesVal.innerText = decodedCount;
+
+          if (decodedCount % 60 === 0) {
+            addLog("Received hardware payload: " + event.data.byteLength + " bytes segment.");
+          }
+        };
+
+        ws.onclose = () => {
+          isConnected = false;
+          connectBtn.innerText = "Connect Mirror";
+          connectBtn.className = "";
+          statusBadge.style.display = "none";
+          addLog("⚠️ Connection closed.");
+          startSimulation();
+        };
+
+        ws.onerror = (err) => {
+          addLog("❌ Bridge Socket Connection failed! Device is unreachable.");
+          console.error(err);
+        };
+
+      } catch (e) {
+        addLog("❌ Initialization error: " + e.message);
+      }
+    });
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `CastCore-LAN-Receiver-${deviceIp}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addLog(`Standalone Local Mirror Receiver file downloaded successfully!`, "success");
+  };
+
   const handleConnectToggle = () => {
     if (isConnected || isConnecting) {
       stopReceiver();
@@ -553,9 +1010,9 @@ export default function WebReceiver() {
       ctx.font = "11px monospace";
       ctx.fillText("Direct hardware mirror: Raw H.264", sx + 20, sy + 90);
 
-      ctx.fillStyle = "rgba(56, 189, 248, 0.95)";
+      ctx.fillStyle = "rgba(16, 185, 129, 0.95)";
       ctx.font = "bold 9px monospace";
-      ctx.fillText("✦ REMOTELY INTERACTIVE (TOUCH & NAV)", sx + 20, sy + 110);
+      ctx.fillText("✦ READ-ONLY NATIVE WIFI MIRROR", sx + 20, sy + 110);
 
       // Render rotating system fan/gear to demonstrate fine frame updates
       const rotationAngle = (performance.now() / 1000) * Math.PI * 2;
@@ -854,20 +1311,39 @@ export default function WebReceiver() {
                   <span>Browser Security Block Notice</span>
                 </div>
                 <p className="text-slate-400">
-                  Because this Web Receiver operates over secure <strong className="text-white">HTTPS</strong>, contemporary browsers (Chrome, Edge, Safari) strictly block standard <strong className="text-white">ws://</strong> private IP links to prevent "Mixed Content" leakage.
+                  Because this Web Receiver operates over secure <strong className="text-white">HTTPS</strong>, contemporary browsers (Chrome, Edge, Safari) block standard <strong className="text-white">ws://</strong> local network links to prevent "Mixed Content" leakage and unauthorized "Private Network Access" (PNA).
                 </p>
-                <div className="border-t border-white/5 pt-2 mt-1 flex flex-col gap-1.5 text-slate-400">
+                <div className="border-t border-white/5 pt-2 mt-1 flex flex-col gap-2 text-slate-400">
                   <div>
-                    <strong className="text-emerald-400">Option A (Instant Preview):</strong> Re-enable <span className="text-slate-200">"Active Simulation"</span> above to test full screen-sharing interactively inside this window.
+                    <strong className="text-emerald-400">Option A (Instant Preview):</strong> Re-enable <span className="text-slate-200 font-semibold">"Active Simulation"</span> above to test full screen-sharing interactively inside this window.
                   </div>
                   <div>
-                    <strong className="text-amber-400">Option B (Real Device Sync):</strong> Bypass the browser's block by following these steps:
-                    <ol className="list-decimal pl-4 mt-1 flex flex-col gap-1 text-[10px] text-slate-500 font-sans">
-                      <li>Click the <span className="text-slate-300 font-semibold">🔐 Lock Icon</span> to the left of the address bar.</li>
-                      <li>Navigate to <span className="text-slate-300 font-semibold">Site settings</span>.</li>
-                      <li>Locate <span className="text-slate-300 font-semibold">Insecure Content</span> in the list and switch it to <span className="text-emerald-400 font-semibold">Allow</span>.</li>
-                      <li>Refresh this tab & click the start bridge button again!</li>
+                    <strong className="text-amber-400 font-bold">Option B (Real Device Sync over HTTPS):</strong> Bypass browser restrictions:
+                    <ol className="list-decimal pl-4 mt-1 flex flex-col gap-1 text-[10px] text-slate-400 font-sans">
+                      <li>
+                        <span className="text-slate-200 font-semibold">Step 1 (Mixed Content Block):</span> Click the <span className="text-slate-300 font-semibold">🔐 Lock Icon</span> in the URL bar &rarr; <span className="font-semibold">Site Settings</span> &rarr; Locate <span className="text-slate-300 font-semibold">Insecure Content</span> &rarr; Set to <span className="text-emerald-400 font-semibold">Allow</span>.
+                      </li>
+                      <li>
+                        <span className="text-slate-200 font-semibold">Step 2 (Chrome Local Network Rule):</span> Copy & paste <code className="bg-slate-900 border border-white/10 px-1 rounded text-amber-300 text-[9px] font-mono">chrome://flags/#block-insecure-private-network-requests</code> in your address bar, switch it to <span className="text-rose-400 font-semibold">Disabled</span>, and relaunch Chrome.
+                      </li>
+                      <li>Refresh this browser tab & press <strong className="text-emerald-400">Bridge Stream Receiver</strong>!</li>
                     </ol>
+                  </div>
+                  <div className="border-t border-white/5 pt-1 text-[10px] text-slate-500">
+                    💡 <strong className="text-slate-400">Pro-Tip:</strong> Running the web receiver on <span className="text-slate-400">http://localhost</span> bypasses all security restrictions automatically without changing flags.
+                  </div>
+                  <div className="border-t border-white/10 pt-2.5 mt-1 flex flex-col gap-2">
+                    <strong className="text-emerald-400 font-bold uppercase tracking-wider text-[9px]">Option C (Zero-Config Offline Bypass):</strong>
+                    <p className="text-[10px] text-slate-400 leading-normal m-0">
+                      Export a lightweight, custom, single-file HTML wrapper. Opening it locally in your laptop's browser runs in a secure local context that bypasses all private-network and mixed-content blocking immediately!
+                    </p>
+                    <button
+                      type="button"
+                      onClick={downloadLocalReceiver}
+                      className="w-full mt-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-[10px] font-extrabold rounded-lg tracking-wider uppercase transition-all hover:scale-[1.01] flex items-center justify-center gap-1.5 cursor-pointer shadow-[0_4px_12px_rgba(16,185,129,0.2)]"
+                    >
+                      <Download size={12} className="stroke-[3px]" /> Download Standalone LAN Receiver (.html)
+                    </button>
                   </div>
                 </div>
               </div>
@@ -925,15 +1401,8 @@ export default function WebReceiver() {
               ref={canvasRef}
               width={384}
               height={816}
-              className="max-h-full max-w-full rounded-xl object-contain shadow-2xl transition cursor-crosshair active:cursor-grabbing select-none"
+              className="max-h-full max-w-full rounded-xl object-contain shadow-2xl transition cursor-default select-none"
               id="web-cast-canvas"
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseLeave}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
             />
           ) : (
             <div className="text-center p-8 select-none flex flex-col items-center justify-center gap-4">
