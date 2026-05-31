@@ -125,18 +125,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateIpAddress() {
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        var ipAddress = wifiManager.connectionInfo.ipAddress
-        if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
-            ipAddress = Integer.reverseBytes(ipAddress)
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val connectionInfo = wifiManager.connectionInfo
+            var ipAddress = connectionInfo?.ipAddress ?: 0
+            
+            if (ipAddress != 0) {
+                if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
+                    ipAddress = Integer.reverseBytes(ipAddress)
+                }
+                val ipByteArray = BigInteger.valueOf(ipAddress.toLong()).toByteArray().reversedArray()
+                val ipAddressString = try {
+                    InetAddress.getByAddress(ipByteArray).hostAddress
+                } catch (ex: Exception) {
+                    "127.0.0.1"
+                }
+                tvIpAddress.text = String.format(Locale.US, "ws://%s:8080/stream", ipAddressString)
+            } else {
+                tvIpAddress.text = "ws://127.0.0.1:8080/stream"
+            }
+        } catch (e: Exception) {
+            tvIpAddress.text = "ws://127.0.0.1:8080/stream"
         }
-        val ipByteArray = BigInteger.valueOf(ipAddress.toLong()).toByteArray().reversedArray()
-        val ipAddressString = try {
-            InetAddress.getByAddress(ipByteArray).hostAddress
-        } catch (ex: Exception) {
-            "Unknown IP"
-        }
-        
-        tvIpAddress.text = String.format(Locale.US, "ws://%s:8080/stream", ipAddressString)
     }
 }
