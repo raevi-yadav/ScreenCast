@@ -1,0 +1,6 @@
+{
+  "name": "Android Screen and Audio Streamer",
+  "description": "An ultra-low latency screen and internal audio streaming receiver and Android Kotlin codebase explorer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

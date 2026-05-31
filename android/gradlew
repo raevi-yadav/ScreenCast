@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Setup Gradle Wrapper launcher stub script
+# If there is no wrapper jar, it attempts to download or run local gradle.
+
+# Find the directory
+DIRNAME=`dirname "$0"`
+if [ -z "$DIRNAME" ]; then
+  DIRNAME="."
+fi
+
+# Find java
+if [ -n "$JAVA_HOME" ]; then
+  JAVACMD="$JAVA_HOME/bin/java"
+else
+  JAVACMD="java"
+fi
+
+# We download wrapper jar if missing
+WRAPER_JAR="$DIRNAME/gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$WRAPER_JAR" ]; then
+  echo "Downloading Gradle Wrapper bootstrap jar..."
+  mkdir -p "$DIRNAME/gradle/wrapper"
+  # Download gradle wrapper jar using curl or wget
+  if command -v curl >/dev/null 2>&1; then
+    curl -sS -L -o "$WRAPER_JAR" https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$WRAPER_JAR" https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar
+  else
+    echo "ERROR: curl or wget is required to bootstrap the gradle wrapper."
+    exit 1
+  fi
+fi
+
+# Execute the java application
+exec "$JAVACMD" \
+  "-Dorg.gradle.appname=gradlew" \
+  -classpath "$WRAPER_JAR" \
+  org.gradle.wrapper.GradleWrapperMain \
+  "$@"

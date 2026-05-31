@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="#050608">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CastCore Streamer"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="#ffffff"
+        android:layout_marginTop="40dp"
+        android:fontFamily="sans-serif-black"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ultra Low-Latency Web Cast Server"
+        android:textSize="12sp"
+        android:textColor="#8888aa"
+        android:layout_marginTop="4dp"
+        android:fontFamily="sans-serif-medium"/>
+
+    <View
+        android:layout_width="60dp"
+        android:layout_height="2dp"
+        android:background="#10b981"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="32dp" />
+
+    <TextView
+        android:id="@+id/tvStatusLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="SERVICE STATUS"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:textColor="#555577"
+        android:letterSpacing="0.15" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Service Idle"
+        android:textSize="18sp"
+        android:textColor="#777777"
+        android:layout_marginTop="4dp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvIpLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="BROADCAST ENDPOINT"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:textColor="#555577"
+        android:letterSpacing="0.15"
+        android:layout_marginTop="40dp" />
+
+    <TextView
+        android:id="@+id/tvIpAddress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ws://192.168.1.50:8080/stream"
+        android:textSize="16sp"
+        android:textColor="#10b981"
+        android:layout_marginTop="4dp"
+        android:textStyle="bold"
+        android:fontFamily="monospace" />
+
+    <Button
+        android:id="@+id/btnToggleStream"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:layout_marginTop="60dp"
+        android:text="Start Live Stream"
+        android:textSize="14sp"
+        android:textColor="#ffffff"
+        android:backgroundTint="#10b981"
+        android:background="@android:color/holo_green_light"
+        android:fontFamily="sans-serif-medium"
+        android:textAllCaps="true"/>
+
+</LinearLayout>

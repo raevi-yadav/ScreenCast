@@ -1,0 +1,43 @@
+name: Build CastCore Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows manual triggers from GitHub UI or mobile device
+
+jobs:
+  build-apk:
+    name: Build Android App
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+          cache: gradle
+
+      - name: Grant Execute Permission to Gradlew
+        run: chmod +x android/gradlew
+
+      - name: Compile and Bundle Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Sign & Optimize APK (Optional debug signing is automatic)
+        run: |
+          echo "APK build complete. Standard Android debug signing applied."
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CastCore-Streamer-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
