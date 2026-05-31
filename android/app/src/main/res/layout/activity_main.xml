@@ -63,7 +63,7 @@
         android:textStyle="bold"
         android:textColor="#555577"
         android:letterSpacing="0.15"
-        android:layout_marginTop="40dp" />
+        android:layout_marginTop="30dp" />
 
     <TextView
         android:id="@+id/tvIpAddress"
@@ -75,6 +75,30 @@
         android:layout_marginTop="4dp"
         android:textStyle="bold"
         android:fontFamily="monospace" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="WEB LOG RECIPIENT URL"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:textColor="#555577"
+        android:letterSpacing="0.15"
+        android:layout_marginTop="30dp" />
+
+    <EditText
+        android:id="@+id/etWorkspaceUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="https://your-workspace-url"
+        android:textColor="#ffffff"
+        android:textColorHint="#444455"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:backgroundTint="#222233"
+        android:layout_marginTop="4dp"
+        android:padding="10dp" />
 
     <Button
         android:id="@+id/btnToggleStream"

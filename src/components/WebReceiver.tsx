@@ -44,6 +44,37 @@ export default function WebReceiver() {
   const lastFpsUpdateRef = useRef(Date.now());
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  const [deviceLogs, setDeviceLogs] = useState<Array<{ time: string; level: string; tag: string; message: string }>>([]);
+  const [consoleTab, setConsoleTab] = useState<'web' | 'android'>('web');
+  const deviceLogsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let intervalId: any;
+    const fetchAndroidLogs = async () => {
+      try {
+        const res = await fetch('/api/logs');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.logs)) {
+            setDeviceLogs(data.logs);
+          }
+        }
+      } catch (err) {
+        // Background fail safe
+      }
+    };
+
+    fetchAndroidLogs();
+    intervalId = setInterval(fetchAndroidLogs, 1500);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    if (consoleTab === 'android') {
+      deviceLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [deviceLogs, consoleTab]);
+
   // Simulated content coordinates
   const ball1Ref = useRef({ x: 150, y: 300, dx: 4, dy: 3.5, color: "#10b981", size: 24 });
   const ball2Ref = useRef({ x: 250, y: 550, dx: -3, dy: 4.5, color: "#3b82f6", size: 18 });
@@ -904,33 +935,93 @@ export default function WebReceiver() {
 
         {/* Console logs */}
         <div className="bg-[#0c0f16] border border-white/10 rounded-2xl p-4 flex flex-col shadow-sm h-[320px]">
-          <h4 className="font-mono uppercase text-slate-200 text-xs font-bold tracking-wider mb-2 select-none">
-            Diagnostic WebConsole
-          </h4>
-          <div className="flex-1 bg-[#050608] border border-white/5 rounded-xl p-3 font-mono text-[10px] overflow-y-auto flex flex-col gap-2 select-text leading-5">
-            {logs.map((log, index) => {
-              let tagColor = "text-slate-600";
-              let msgColor = "text-slate-400";
-              if (log.type === "success") {
-                tagColor = "text-emerald-500";
-                msgColor = "text-emerald-300";
-              } else if (log.type === "warn") {
-                tagColor = "text-amber-500";
-                msgColor = "text-amber-200";
-              } else if (log.type === "incoming") {
-                tagColor = "text-yellow-500";
-                msgColor = "text-yellow-300";
-              }
-              return (
-                <div key={index} className="border-b border-white/5 pb-1.5 last:border-none last:pb-0">
-                  <span className="text-slate-500 opacity-65 pr-2 select-none">[{log.time}]</span>
-                  <span className={`${tagColor} font-bold pr-1.5`}>*</span>
-                  <span className={msgColor}>{log.text}</span>
-                </div>
-              );
-            })}
-            <div ref={logsEndRef} />
+          <div className="flex items-center justify-between mb-2 select-none border-b border-white/10 pb-2">
+            <h4 className="font-mono uppercase text-slate-200 text-xs font-bold tracking-wider">
+              Diagnostic Logs
+            </h4>
+            <div className="flex gap-1 bg-[#050608] p-0.5 rounded border border-white/5 font-mono text-[9px]">
+              <button
+                onClick={() => setConsoleTab('web')}
+                className={`px-2 py-1 rounded cursor-pointer transition ${consoleTab === 'web' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Web Receiver
+              </button>
+              <button
+                onClick={() => setConsoleTab('android')}
+                className={`px-2 py-1 rounded cursor-pointer transition ${consoleTab === 'android' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Android Device
+              </button>
+            </div>
           </div>
+
+          {consoleTab === 'web' ? (
+            <div className="flex-1 bg-[#050608] border border-white/5 rounded-xl p-3 font-mono text-[10px] overflow-y-auto flex flex-col gap-2 select-text leading-5">
+              {logs.map((log, index) => {
+                let tagColor = "text-slate-600";
+                let msgColor = "text-slate-400";
+                if (log.type === "success") {
+                  tagColor = "text-emerald-500";
+                  msgColor = "text-emerald-300";
+                } else if (log.type === "warn") {
+                  tagColor = "text-amber-500";
+                  msgColor = "text-amber-200";
+                } else if (log.type === "incoming") {
+                  tagColor = "text-yellow-500";
+                  msgColor = "text-yellow-300";
+                }
+                return (
+                  <div key={index} className="border-b border-white/5 pb-1.5 last:border-none last:pb-0">
+                    <span className="text-slate-500 opacity-65 pr-2 select-none">[{log.time}]</span>
+                    <span className={`${tagColor} font-bold pr-1.5`}>*</span>
+                    <span className={msgColor}>{log.text}</span>
+                  </div>
+                );
+              })}
+              <div ref={logsEndRef} />
+            </div>
+          ) : (
+            <div className="flex-1 bg-[#050608] border border-white/5 rounded-xl p-3 font-mono text-[10px] overflow-y-auto flex flex-col gap-2 select-text leading-4">
+              {deviceLogs.length === 0 ? (
+                <div className="text-slate-500 text-center py-10 font-sans">
+                  No device logs received yet.<br/>
+                  <span className="text-slate-600 text-[10px] mt-1 inline-block">
+                    Provide this workspace URL in the Android App field and start streaming to sync live logs!
+                  </span>
+                </div>
+              ) : (
+                deviceLogs.map((log, index) => {
+                  let badgeStyle = "text-slate-400 border-slate-800 bg-slate-950";
+                  let messageStyle = "text-slate-300";
+                  if (log.level === "ERROR" || log.level === "CRASH") {
+                    badgeStyle = "text-rose-400 border-rose-900/65 bg-rose-950/40 font-bold";
+                    messageStyle = "text-rose-300 font-semibold";
+                  } else if (log.level === "WARN") {
+                    badgeStyle = "text-amber-400 border-amber-900/65 bg-amber-950/40";
+                    messageStyle = "text-amber-200";
+                  } else if (log.level === "INFO") {
+                    badgeStyle = "text-emerald-400 border-emerald-920 bg-emerald-950/40";
+                    messageStyle = "text-emerald-100/90";
+                  }
+                  return (
+                    <div key={index} className="border-b border-white/5 pb-1.5 last:border-none last:pb-0">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-slate-600 shrink-0 select-none">[{log.time}]</span>
+                        <span className={`shrink-0 text-[8px] font-bold border px-1 rounded uppercase select-none ${badgeStyle}`}>
+                          {log.level}
+                        </span>
+                        <span className="text-slate-500 shrink-0 select-none font-bold">[{log.tag}]</span>
+                        <span className={`break-all whitespace-pre-wrap select-text ${messageStyle}`}>
+                          {log.message}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={deviceLogsEndRef} />
+            </div>
+          )}
         </div>
       </div>
     </div>

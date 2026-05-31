@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.widget.EditText
 import java.net.InetAddress
 import java.nio.ByteOrder
 import java.util.Locale
@@ -23,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnToggleStream: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvIpAddress: TextView
+    private lateinit var etWorkspaceUrl: EditText
 
     private val recordAudioPermissionRequestCode = 1001
     private val screenCaptureRequestCode = 1002
@@ -34,11 +36,20 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Register uncaught crash reporter immediately
+        RemoteLogger.registerUncaughtExceptionHandler()
+
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         btnToggleStream = findViewById(R.id.btnToggleStream)
         tvStatus = findViewById(R.id.tvStatus)
         tvIpAddress = findViewById(R.id.tvIpAddress)
+        etWorkspaceUrl = findViewById(R.id.etWorkspaceUrl)
+
+        // Load saved Workspace URL
+        val prefs = getSharedPreferences("cast_prefs", Context.MODE_PRIVATE)
+        val savedUrl = prefs.getString("workspace_url", "")
+        etWorkspaceUrl.setText(savedUrl)
 
         updateIpAddress()
 
@@ -46,6 +57,12 @@ class MainActivity : AppCompatActivity() {
             if (isStreaming) {
                 stopStreaming()
             } else {
+                val inputUrl = etWorkspaceUrl.text.toString().trim()
+                // Save Workspace URL
+                prefs.edit().putString("workspace_url", inputUrl).apply()
+                // Initialize Remote Log sender
+                RemoteLogger.init(inputUrl)
+                
                 checkPermissionsAndStart()
             }
         }
@@ -97,11 +114,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startStreaming(resultCode: Int, data: Intent) {
+        val workspaceUrl = etWorkspaceUrl.text.toString().trim()
         val serviceIntent = Intent(this, ScreenStreamingService::class.java).apply {
             action = ScreenStreamingService.ACTION_START
             putExtra(ScreenStreamingService.EXTRA_RESULT_CODE, resultCode)
             putExtra(ScreenStreamingService.EXTRA_PROJECTION_INTENT, data)
+            putExtra("WORKSPACE_URL", workspaceUrl)
         }
+        RemoteLogger.log("INFO", "MainActivity", "Starting foreground streaming pipeline towards workspace: $workspaceUrl")
         ContextCompat.startForegroundService(this, serviceIntent)
         
         isStreaming = true

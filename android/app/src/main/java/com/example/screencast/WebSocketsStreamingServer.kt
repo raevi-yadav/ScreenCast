@@ -198,6 +198,7 @@ class WebSocketsStreamingServer(private val port: Int) {
         val input: InputStream,
         val output: OutputStream
     ) {
+        @Synchronized
         fun sendBinary(rawFrame: ByteArray) {
             output.write(rawFrame)
             output.flush()

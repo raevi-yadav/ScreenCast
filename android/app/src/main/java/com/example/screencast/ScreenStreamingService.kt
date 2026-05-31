@@ -81,6 +81,10 @@ class ScreenStreamingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         if (action == ACTION_START) {
+            val workspaceUrl = intent.getStringExtra("WORKSPACE_URL")
+            RemoteLogger.init(workspaceUrl)
+            RemoteLogger.log("INFO", TAG, "ScreenStreamingService triggered via ACTION_START")
+
             val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
             val data = intent.getParcelableExtra<Intent>(EXTRA_PROJECTION_INTENT)
             if (resultCode != -1 && data != null) {
@@ -88,6 +92,7 @@ class ScreenStreamingService : Service() {
                 startCapturePipelines(resultCode, data)
             }
         } else if (action == ACTION_STOP) {
+            RemoteLogger.log("INFO", TAG, "ScreenStreamingService triggered via ACTION_STOP")
             stopSelf()
         }
         return START_NOT_STICKY
@@ -96,7 +101,7 @@ class ScreenStreamingService : Service() {
     private fun startWebSocketServer() {
         websocketServer = WebSocketsStreamingServer(PORT)
         websocketServer?.start()
-        Log.i(TAG, "Local streaming server started on port $PORT")
+        RemoteLogger.log("INFO", TAG, "Local streaming server started on port $PORT")
     }
 
     private fun startCapturePipelines(resultCode: Int, data: Intent) {
@@ -104,7 +109,7 @@ class ScreenStreamingService : Service() {
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
 
         if (mediaProjection == null) {
-            Log.e(TAG, "Failed to instantiate Media Projection Manager.")
+            RemoteLogger.log("ERROR", TAG, "Failed to instantiate Media Projection Manager.")
             stopSelf()
             return
         }
@@ -130,7 +135,7 @@ class ScreenStreamingService : Service() {
         currentDensity = density
         currentFps = nativeRefreshRate
 
-        Log.i(TAG, "Display: Width=$width, Height=$height, Refresh=$nativeRefreshRate, DPI=$density")
+        RemoteLogger.log("INFO", TAG, "Display: Width=$width, Height=$height, Refresh=$nativeRefreshRate, DPI=$density")
 
         // 2. Setup video encoder using Hardware-Accelerated H.264
         setupVideoEncoder(width, height, nativeRefreshRate)
@@ -160,27 +165,29 @@ class ScreenStreamingService : Service() {
     private fun setupVideoEncoder(width: Int, height: Int, fps: Int) {
         try {
             configureVideoEncoderInternal(width, height, fps)
+            RemoteLogger.log("INFO", TAG, "Successfully initialized hardware video encoder at ${width}x${height} $fps fps")
         } catch (ex: Exception) {
-            Log.w(TAG, "Failed to configure video encoder at native resolution ${width}x${height}: ${ex.localizedMessage}. Attempting standard 720p scale-down fallback...")
+            RemoteLogger.log("WARN", TAG, "Failed to configure video encoder at native resolution ${width}x${height}: ${ex.localizedMessage}. Attempting standard 720p scale-down fallback...")
             try {
                 // Keep the same high-contrast aspect ratio, but scale width down to standard 720px (must be multiple of 16 for standard hardware H.264 profiles)
                 val targetWidth = 720
                 val aspectRatio = height.toFloat() / width.toFloat()
                 val targetHeight = ((targetWidth * aspectRatio).toInt() / 16) * 16
-                Log.i(TAG, "Fallback resolution: ${targetWidth}x${targetHeight} at 30 fps")
+                RemoteLogger.log("INFO", TAG, "Fallback resolution selected: ${targetWidth}x${targetHeight} at 30 fps")
                 configureVideoEncoderInternal(targetWidth, targetHeight, 30)
                 currentWidth = targetWidth
                 currentHeight = targetHeight
                 currentFps = 30
             } catch (ex2: Exception) {
-                Log.e(TAG, "Failed fallback video encoder: ${ex2.localizedMessage}. Attempting absolute baseline 480x800...")
+                RemoteLogger.log("ERROR", TAG, "Failed fallback video encoder: ${ex2.localizedMessage}. Attempting absolute baseline 480x800...")
                 try {
                     configureVideoEncoderInternal(480, 800, 30)
                     currentWidth = 480
                     currentHeight = 800
                     currentFps = 30
+                    RemoteLogger.log("INFO", TAG, "Successfully initialized absolute baseline encoder at 480x800")
                 } catch (ex3: Exception) {
-                    Log.e(TAG, "Absolute baseline 480x800 video encoder configuration crashed: ${ex3.localizedMessage}")
+                    RemoteLogger.log("ERROR", TAG, "Absolute baseline 480x800 video encoder configuration crashed: ${ex3.localizedMessage}")
                     throw ex3
                 }
             }
@@ -190,17 +197,15 @@ class ScreenStreamingService : Service() {
     private fun configureVideoEncoderInternal(width: Int, height: Int, fps: Int) {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, 6_000_000) // 6 Mbps is safe, ultra high quality, and standard for local casting
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // Keyframe every second for instant device join
-            
-            setInteger(MediaFormat.KEY_LATENCY, 0)
-            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
-                setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel42)
-            }
+            setInteger(MediaFormat.KEY_BIT_RATE, 4_000_000) // 4 Mbps is universally supported and extremely stable
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps.coerceIn(15, 60))
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2) // Keyframe every 2 seconds is incredibly stable
         }
+
+        // Try setting standard bitrate modes safely
+        try {
+            format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+        } catch (_: Exception) {}
 
         videoEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
             configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
@@ -235,11 +240,15 @@ class ScreenStreamingService : Service() {
                 .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
                 .build()
 
-            val minBufferSize = AudioRecord.getMinBufferSize(
+            val minBufferSizeRaw = AudioRecord.getMinBufferSize(
                 sampleRate,
                 AudioFormat.CHANNEL_IN_STEREO,
                 AudioFormat.ENCODING_PCM_16BIT
-            ) * 2
+            )
+            if (minBufferSizeRaw <= 0) {
+                throw IllegalStateException("AudioRecord reported invalid minBufferSize: $minBufferSizeRaw")
+            }
+            val minBufferSize = minBufferSizeRaw * 2
 
             audioRecord = AudioRecord.Builder()
                 .setAudioFormat(
@@ -254,8 +263,9 @@ class ScreenStreamingService : Service() {
                 .build()
 
             audioRecord?.startRecording()
+            RemoteLogger.log("INFO", TAG, "Successfully initialized and started system audio capture")
         } catch (ex: Exception) {
-            Log.e(TAG, "Could not initialize internal audio pipeline: ${ex.localizedMessage}")
+            RemoteLogger.log("ERROR", TAG, "Could not initialize internal audio pipeline: ${ex.localizedMessage}")
         }
     }
 
