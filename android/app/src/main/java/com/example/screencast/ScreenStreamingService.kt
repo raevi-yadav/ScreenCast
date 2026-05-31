@@ -287,9 +287,12 @@ class ScreenStreamingService : Service() {
                             )
                         }
                         encoder.releaseOutputBuffer(outputBufferId, false)
+                    } else if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                        kotlinx.coroutines.yield()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Video loop error: ${e.localizedMessage}")
+                    kotlinx.coroutines.delay(100L)
                 }
             }
         }
@@ -319,10 +322,13 @@ class ScreenStreamingService : Service() {
                                     aEncoder.queueInputBuffer(inputBufferId, 0, bytesRead, presentationTimeUs, 0)
                                 }
                             }
+                        } else {
+                            // If pcmRecord is not initialized, returns error status, or holds, delay to prevent infinite tight CPU spinning!
+                            kotlinx.coroutines.delay(100L)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Audio submit error: ${e.localizedMessage}")
-                        kotlinx.coroutines.delay(50L)
+                        kotlinx.coroutines.delay(100L)
                     }
                 }
             }
@@ -349,9 +355,12 @@ class ScreenStreamingService : Service() {
                                 )
                             }
                             aEncoder.releaseOutputBuffer(outputBufferId, false)
+                        } else if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                            kotlinx.coroutines.yield()
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Audio encoder loop error: ${e.localizedMessage}")
+                        kotlinx.coroutines.delay(100L)
                     }
                 }
             }

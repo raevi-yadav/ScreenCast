@@ -716,6 +716,33 @@ export default function WebReceiver() {
                 </>
               )}
             </button>
+
+            {/* Active HTTPS / Mixed Content Warning Card */}
+            {typeof window !== "undefined" && window.location.protocol === "https:" && !isSimulationMode && (
+              <div className="mt-3 bg-amber-500/5 border border-amber-500/20 p-3.5 rounded-xl flex flex-col gap-2 font-sans text-[11px] leading-relaxed select-text" id="https-mixed-content-warning">
+                <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider text-[10px]">
+                  <ShieldAlert size={14} className="animate-bounce shrink-0" />
+                  <span>Browser Security Block Notice</span>
+                </div>
+                <p className="text-slate-400">
+                  Because this Web Receiver operates over secure <strong className="text-white">HTTPS</strong>, contemporary browsers (Chrome, Edge, Safari) strictly block standard <strong className="text-white">ws://</strong> private IP links to prevent "Mixed Content" leakage.
+                </p>
+                <div className="border-t border-white/5 pt-2 mt-1 flex flex-col gap-1.5 text-slate-400">
+                  <div>
+                    <strong className="text-emerald-400">Option A (Instant Preview):</strong> Re-enable <span className="text-slate-200">"Active Simulation"</span> above to test full screen-sharing interactively inside this window.
+                  </div>
+                  <div>
+                    <strong className="text-amber-400">Option B (Real Device Sync):</strong> Bypass the browser's block by following these steps:
+                    <ol className="list-decimal pl-4 mt-1 flex flex-col gap-1 text-[10px] text-slate-500 font-sans">
+                      <li>Click the <span className="text-slate-300 font-semibold">🔐 Lock Icon</span> to the left of the address bar.</li>
+                      <li>Navigate to <span className="text-slate-300 font-semibold">Site settings</span>.</li>
+                      <li>Locate <span className="text-slate-300 font-semibold">Insecure Content</span> in the list and switch it to <span className="text-emerald-400 font-semibold">Allow</span>.</li>
+                      <li>Refresh this tab & click the start bridge button again!</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
