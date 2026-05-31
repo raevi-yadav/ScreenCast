@@ -125,27 +125,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateIpAddress() {
+        tvIpAddress.text = "ws://${getLocalIpAddress()}:8080/stream"
+    }
+
+    private fun getLocalIpAddress(): String {
         try {
+            // Priority 1: Check standard Wi-Fi IP address
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val connectionInfo = wifiManager.connectionInfo
-            var ipAddress = connectionInfo?.ipAddress ?: 0
-            
+            val ipAddress = connectionInfo?.ipAddress ?: 0
             if (ipAddress != 0) {
-                if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
-                    ipAddress = Integer.reverseBytes(ipAddress)
+                // WifiManager IP address is natively integer format in LITTLE_ENDIAN
+                val ipAddressString = String.format(
+                    Locale.US,
+                    "%d.%d.%d.%d",
+                    (ipAddress and 0xff),
+                    (ipAddress shr 8 and 0xff),
+                    (ipAddress shr 16 and 0xff),
+                    (ipAddress shr 24 and 0xff)
+                )
+                if (ipAddressString != "0.0.0.0" && ipAddressString != "127.0.0.1") {
+                    return ipAddressString
                 }
-                val ipByteArray = BigInteger.valueOf(ipAddress.toLong()).toByteArray().reversedArray()
-                val ipAddressString = try {
-                    InetAddress.getByAddress(ipByteArray).hostAddress
-                } catch (ex: Exception) {
-                    "127.0.0.1"
-                }
-                tvIpAddress.text = String.format(Locale.US, "ws://%s:8080/stream", ipAddressString)
-            } else {
-                tvIpAddress.text = "ws://127.0.0.1:8080/stream"
             }
-        } catch (e: Exception) {
-            tvIpAddress.text = "ws://127.0.0.1:8080/stream"
-        }
+        } catch (_: Exception) {}
+
+        try {
+            // Priority 2: Iterate over all interfaces to find active non-loopback IPv4 addresses (mobile data, hotspot, bridges)
+            val en = java.net.NetworkInterface.getNetworkInterfaces()
+            while (en.hasMoreElements()) {
+                val intf = en.nextElement()
+                val enumIpAddr = intf.inetAddresses
+                while (enumIpAddr.hasMoreElements()) {
+                    val inetAddress = enumIpAddr.nextElement()
+                    if (!inetAddress.isLoopbackAddress && inetAddress is java.net.InetAddress) {
+                        val host = inetAddress.hostAddress ?: ""
+                        if (host.isNotEmpty() && !host.contains(":")) { // IPv4 format check
+                            return host
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return "127.0.0.1"
     }
 }

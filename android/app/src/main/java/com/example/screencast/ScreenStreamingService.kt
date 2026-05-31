@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -134,13 +135,13 @@ class ScreenStreamingService : Service() {
         // 2. Setup video encoder using Hardware-Accelerated H.264
         setupVideoEncoder(width, height, nativeRefreshRate)
         
-        // 3. Register input virtual display surface to mirror pixels onto MediaCodec
+        // 3. Register input virtual display surface to mirror pixels onto MediaCodec with the negotiated resolution
         val inputSurface = videoEncoder?.createInputSurface()
         if (inputSurface != null) {
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "ScreenMirrorDisplay",
-                width,
-                height,
+                currentWidth,
+                currentHeight,
                 density,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 inputSurface,
@@ -157,13 +158,42 @@ class ScreenStreamingService : Service() {
     }
 
     private fun setupVideoEncoder(width: Int, height: Int, fps: Int) {
+        try {
+            configureVideoEncoderInternal(width, height, fps)
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to configure video encoder at native resolution ${width}x${height}: ${ex.localizedMessage}. Attempting standard 720p scale-down fallback...")
+            try {
+                // Keep the same high-contrast aspect ratio, but scale width down to standard 720px (must be multiple of 16 for standard hardware H.264 profiles)
+                val targetWidth = 720
+                val aspectRatio = height.toFloat() / width.toFloat()
+                val targetHeight = ((targetWidth * aspectRatio).toInt() / 16) * 16
+                Log.i(TAG, "Fallback resolution: ${targetWidth}x${targetHeight} at 30 fps")
+                configureVideoEncoderInternal(targetWidth, targetHeight, 30)
+                currentWidth = targetWidth
+                currentHeight = targetHeight
+                currentFps = 30
+            } catch (ex2: Exception) {
+                Log.e(TAG, "Failed fallback video encoder: ${ex2.localizedMessage}. Attempting absolute baseline 480x800...")
+                try {
+                    configureVideoEncoderInternal(480, 800, 30)
+                    currentWidth = 480
+                    currentHeight = 800
+                    currentFps = 30
+                } catch (ex3: Exception) {
+                    Log.e(TAG, "Absolute baseline 480x800 video encoder configuration crashed: ${ex3.localizedMessage}")
+                    throw ex3
+                }
+            }
+        }
+    }
+
+    private fun configureVideoEncoderInternal(width: Int, height: Int, fps: Int) {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, 15_000_000) // 15 Mbps for rich clarity over local Wi-Fi
+            setInteger(MediaFormat.KEY_BIT_RATE, 6_000_000) // 6 Mbps is safe, ultra high quality, and standard for local casting
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // Crucial for instant browser stream join (Keyframe every second)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // Keyframe every second for instant device join
             
-            // Extreme Low Latency optimizations
             setInteger(MediaFormat.KEY_LATENCY, 0)
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -276,9 +306,9 @@ class ScreenStreamingService : Service() {
             audioCaptureJob = serviceScope.launch(Dispatchers.IO) {
                 val buffer = ByteArray(4096)
                 while (isActive) {
-                    val bytesRead = pcmRecord.read(buffer, 0, buffer.size)
-                    if (bytesRead > 0) {
-                        try {
+                    try {
+                        val bytesRead = pcmRecord.read(buffer, 0, buffer.size)
+                        if (bytesRead > 0) {
                             val inputBufferId = aEncoder.dequeueInputBuffer(10_000L)
                             if (inputBufferId >= 0) {
                                 val inputBuffer = aEncoder.getInputBuffer(inputBufferId)
@@ -289,9 +319,10 @@ class ScreenStreamingService : Service() {
                                     aEncoder.queueInputBuffer(inputBufferId, 0, bytesRead, presentationTimeUs, 0)
                                 }
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Audio submit error: ${e.localizedMessage}")
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Audio submit error: ${e.localizedMessage}")
+                        kotlinx.coroutines.delay(50L)
                     }
                 }
             }
@@ -410,7 +441,15 @@ class ScreenStreamingService : Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
             
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID, 
+                notification, 
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {
