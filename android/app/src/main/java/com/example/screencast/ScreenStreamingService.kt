@@ -70,6 +70,9 @@ class ScreenStreamingService : Service() {
     private var currentDensity = 0
     private var currentFps = 60
 
+    private val videoEncoderLock = Any()
+    private val audioEncoderLock = Any()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -81,15 +84,26 @@ class ScreenStreamingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         if (action == ACTION_START) {
-            val workspaceUrl = intent.getStringExtra("WORKSPACE_URL")
+            val workspaceUrl = intent?.getStringExtra("WORKSPACE_URL")
             RemoteLogger.init(workspaceUrl)
             RemoteLogger.log("INFO", TAG, "ScreenStreamingService triggered via ACTION_START")
 
-            val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
-            val data = intent.getParcelableExtra<Intent>(EXTRA_PROJECTION_INTENT)
+            val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: -1
+            val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent?.getParcelableExtra(EXTRA_PROJECTION_INTENT, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra(EXTRA_PROJECTION_INTENT)
+            }
+
+            // Always call startForeground first to prevent ForegroundServiceDidNotStartInTimeException on Android 14
+            startForegroundNotification()
+
             if (resultCode != -1 && data != null) {
-                startForegroundNotification()
                 startCapturePipelines(resultCode, data)
+            } else {
+                RemoteLogger.log("ERROR", TAG, "Invalid start intents: resultCode=$resultCode, data=${if (data == null) "NULL" else "VALID"}")
+                stopSelf()
             }
         } else if (action == ACTION_STOP) {
             RemoteLogger.log("INFO", TAG, "ScreenStreamingService triggered via ACTION_STOP")
@@ -113,6 +127,13 @@ class ScreenStreamingService : Service() {
             stopSelf()
             return
         }
+
+        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                RemoteLogger.log("INFO", TAG, "MediaProjection terminated by system/user request.")
+                stopSelf()
+            }
+        }, null)
 
         // 1. Setup screen metrics dynamically matching native Hardware Display values
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -207,9 +228,11 @@ class ScreenStreamingService : Service() {
             format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
         } catch (_: Exception) {}
 
-        videoEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
-            configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            start()
+        synchronized(videoEncoderLock) {
+            videoEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
+                configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                start()
+            }
         }
     }
 
@@ -228,9 +251,11 @@ class ScreenStreamingService : Service() {
                 setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
             }
 
-            audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
-                configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                start()
+            synchronized(audioEncoderLock) {
+                audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
+                    configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    start()
+                }
             }
 
             // High Performance Internal Audio Capture configuration
@@ -273,31 +298,35 @@ class ScreenStreamingService : Service() {
         videoEncoderJob = serviceScope.launch(Dispatchers.IO) {
             val bufferInfo = MediaCodec.BufferInfo()
             while (isActive) {
-                val encoder = videoEncoder ?: break
+                var outputBufferId = -1
                 try {
-                    val outputBufferId = encoder.dequeueOutputBuffer(bufferInfo, 20_000L)
-                    if (outputBufferId >= 0) {
-                        val outputBuffer = encoder.getOutputBuffer(outputBufferId)
-                        if (outputBuffer != null) {
-                            // Extract format configuration descriptors (SPS/PPS) or Key-frames
-                            val isConfig = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
-                            val isKeyframe = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
-                            
-                            val size = bufferInfo.size
-                            val bufferBytes = ByteArray(size)
-                            outputBuffer.get(bufferBytes)
-                            
-                            // Send packet type: 0x01 (Video), size, pts
-                            websocketServer?.broadcastPacket(
-                                packetType = 0x01,
-                                timestampUs = bufferInfo.presentationTimeUs,
-                                rawData = bufferBytes,
-                                isConfig = isConfig,
-                                isKey = isKeyframe
-                            )
+                    synchronized(videoEncoderLock) {
+                        val encoder = videoEncoder
+                        if (encoder != null) {
+                            outputBufferId = encoder.dequeueOutputBuffer(bufferInfo, 20_000L)
+                            if (outputBufferId >= 0) {
+                                val outputBuffer = encoder.getOutputBuffer(outputBufferId)
+                                if (outputBuffer != null) {
+                                    val isConfig = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+                                    val isKeyframe = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                                    
+                                    val size = bufferInfo.size
+                                    val bufferBytes = ByteArray(size)
+                                    outputBuffer.get(bufferBytes)
+                                    
+                                    websocketServer?.broadcastPacket(
+                                        packetType = 0x01,
+                                        timestampUs = bufferInfo.presentationTimeUs,
+                                        rawData = bufferBytes,
+                                        isConfig = isConfig,
+                                        isKey = isKeyframe
+                                    )
+                                }
+                                encoder.releaseOutputBuffer(outputBufferId, false)
+                            }
                         }
-                        encoder.releaseOutputBuffer(outputBufferId, false)
-                    } else if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    }
+                    if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER || outputBufferId < 0) {
                         kotlinx.coroutines.yield()
                     }
                 } catch (e: Exception) {
@@ -314,26 +343,34 @@ class ScreenStreamingService : Service() {
 
         // Audio Input Record & Submission loop
         val pcmRecord = audioRecord
-        val aEncoder = audioEncoder
-        if (pcmRecord != null && aEncoder != null) {
+        if (pcmRecord != null) {
             audioCaptureJob = serviceScope.launch(Dispatchers.IO) {
                 val buffer = ByteArray(4096)
                 while (isActive) {
                     try {
                         val bytesRead = pcmRecord.read(buffer, 0, buffer.size)
                         if (bytesRead > 0) {
-                            val inputBufferId = aEncoder.dequeueInputBuffer(10_000L)
-                            if (inputBufferId >= 0) {
-                                val inputBuffer = aEncoder.getInputBuffer(inputBufferId)
-                                if (inputBuffer != null) {
-                                    inputBuffer.clear()
-                                    inputBuffer.put(buffer, 0, bytesRead)
-                                    val presentationTimeUs = System.nanoTime() / 1000
-                                    aEncoder.queueInputBuffer(inputBufferId, 0, bytesRead, presentationTimeUs, 0)
+                            var inputBufferOffset = -1
+                            synchronized(audioEncoderLock) {
+                                val encoder = audioEncoder
+                                if (encoder != null) {
+                                    val inputBufferId = encoder.dequeueInputBuffer(10_000L)
+                                    inputBufferOffset = inputBufferId
+                                    if (inputBufferId >= 0) {
+                                        val inputBuffer = encoder.getInputBuffer(inputBufferId)
+                                        if (inputBuffer != null) {
+                                            inputBuffer.clear()
+                                            inputBuffer.put(buffer, 0, bytesRead)
+                                            val presentationTimeUs = System.nanoTime() / 1000
+                                            encoder.queueInputBuffer(inputBufferId, 0, bytesRead, presentationTimeUs, 0)
+                                        }
+                                    }
                                 }
                             }
+                            if (inputBufferOffset < 0) {
+                                kotlinx.coroutines.delay(10L)
+                            }
                         } else {
-                            // If pcmRecord is not initialized, returns error status, or holds, delay to prevent infinite tight CPU spinning!
                             kotlinx.coroutines.delay(100L)
                         }
                     } catch (e: Exception) {
@@ -347,25 +384,31 @@ class ScreenStreamingService : Service() {
             audioEncoderJob = serviceScope.launch(Dispatchers.IO) {
                 val bufferInfo = MediaCodec.BufferInfo()
                 while (isActive) {
+                    var outputBufferId = -1
                     try {
-                        val outputBufferId = aEncoder.dequeueOutputBuffer(bufferInfo, 20_000L)
-                        if (outputBufferId >= 0) {
-                            val outputBuffer = aEncoder.getOutputBuffer(outputBufferId)
-                            if (outputBuffer != null) {
-                                val bufferBytes = ByteArray(bufferInfo.size)
-                                outputBuffer.get(bufferBytes)
-                                
-                                // Send packet type: 0x02 (Audio), size, pts
-                                websocketServer?.broadcastPacket(
-                                    packetType = 0x02,
-                                    timestampUs = bufferInfo.presentationTimeUs,
-                                    rawData = bufferBytes,
-                                    isConfig = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0,
-                                    isKey = false
-                                )
+                        synchronized(audioEncoderLock) {
+                            val encoder = audioEncoder
+                            if (encoder != null) {
+                                outputBufferId = encoder.dequeueOutputBuffer(bufferInfo, 20_000L)
+                                if (outputBufferId >= 0) {
+                                    val outputBuffer = encoder.getOutputBuffer(outputBufferId)
+                                    if (outputBuffer != null) {
+                                        val bufferBytes = ByteArray(bufferInfo.size)
+                                        outputBuffer.get(bufferBytes)
+                                        
+                                        websocketServer?.broadcastPacket(
+                                            packetType = 0x02,
+                                            timestampUs = bufferInfo.presentationTimeUs,
+                                            rawData = bufferBytes,
+                                            isConfig = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0,
+                                            isKey = false
+                                        )
+                                    }
+                                    encoder.releaseOutputBuffer(outputBufferId, false)
+                                }
                             }
-                            aEncoder.releaseOutputBuffer(outputBufferId, false)
-                        } else if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                        }
+                        if (outputBufferId == MediaCodec.INFO_TRY_AGAIN_LATER || outputBufferId < 0) {
                             kotlinx.coroutines.yield()
                         }
                     } catch (e: Exception) {
@@ -415,13 +458,15 @@ class ScreenStreamingService : Service() {
         virtualDisplay = null
 
         // 3. Stop and release video encoder
-        try {
-            videoEncoder?.stop()
-            videoEncoder?.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error stopping video encoder on rotation: ${e.localizedMessage}")
+        synchronized(videoEncoderLock) {
+            try {
+                videoEncoder?.stop()
+                videoEncoder?.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping video encoder on rotation: ${e.localizedMessage}")
+            }
+            videoEncoder = null
         }
-        videoEncoder = null
 
         // Update current dimensions
         currentWidth = width
@@ -496,20 +541,26 @@ class ScreenStreamingService : Service() {
         virtualDisplay?.release()
         mediaProjection?.stop()
         
-        try {
-            videoEncoder?.stop()
-            videoEncoder?.release()
-        } catch (_: Exception) {}
+        synchronized(videoEncoderLock) {
+            try {
+                videoEncoder?.stop()
+                videoEncoder?.release()
+            } catch (_: Exception) {}
+            videoEncoder = null
+        }
         
         try {
             audioRecord?.stop()
             audioRecord?.release()
         } catch (_: Exception) {}
         
-        try {
-            audioEncoder?.stop()
-            audioEncoder?.release()
-        } catch (_: Exception) {}
+        synchronized(audioEncoderLock) {
+            try {
+                audioEncoder?.stop()
+                audioEncoder?.release()
+            } catch (_: Exception) {}
+            audioEncoder = null
+        }
 
         websocketServer?.stop()
         Log.i(TAG, "Capture service shut down cleanly.")

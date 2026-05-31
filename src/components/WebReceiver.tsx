@@ -268,6 +268,67 @@ export default function WebReceiver() {
     }
   }, [logs]);
 
+  const [testStatus, setTestStatus] = useState<'idle' | 'active' | 'success' | 'error'>('idle');
+  const [testLogs, setTestLogs] = useState<string[]>([]);
+
+  const runDiagnostics = () => {
+    setTestStatus('active');
+    setTestLogs(["Initializing Link Diagnostic tool..."]);
+    
+    const wsUrl = `ws://${deviceIp}:${port}/stream`;
+    addLog(`[DIAGNOSTICS] Probing active signal towards socket: ${wsUrl}`, "info");
+    
+    // Create actual test connection
+    try {
+      const testSocket = new WebSocket(wsUrl);
+      
+      const timeoutId = setTimeout(() => {
+        testSocket.close();
+        setTestStatus('error');
+        setTestLogs([
+          "❌ Diagnostic failed: Handshake Timed Out (3000ms)",
+          "",
+          "⚠️ High Probability Causes:",
+          "1. Your phone and this computer are NOT on the same Wi-Fi network (check sub-network IPs).",
+          "2. AP Isolation/Client Isolation is enabled on your router (prevents local devices from speaking to each other).",
+          "3. The 'CastCore Streamer' foreground streaming service is not toggled ON in the Android app."
+        ]);
+        addLog("[DIAGNOSTICS] Port probe timed out. Host unreachable.", "warn");
+      }, 3000);
+
+      testSocket.onopen = () => {
+        clearTimeout(timeoutId);
+        testSocket.close();
+        setTestStatus('success');
+        setTestLogs([
+          "✅ Connection Handbook Succeeded!",
+          "",
+          "🚀 Excellent! Communication can be established between this browser and your phone.",
+          "Press 'Bridge Stream Receiver' above to cast live."
+        ]);
+        addLog("[DIAGNOSTICS] Local handshake successfully verified!", "success");
+      };
+
+      testSocket.onerror = () => {
+        clearTimeout(timeoutId);
+        testSocket.close();
+        setTestStatus('error');
+        setTestLogs([
+          "❌ Connection Blocked or Port Unreachable",
+          "",
+          "💡 Recommended Remedies:",
+          "• Step A: Turn on 'Start Live Stream' in the app so the server listens on port 8080.",
+          "• Step B: Overwrite Chrome/Safari's block: Click page Lock Icon 🔐 -> Site settings -> Insecure Content -> change to ALLOW.",
+          "• Step C: Ensure both devices reside on precisely the same Wi-Fi subnet."
+        ]);
+        addLog("[DIAGNOSTICS] Browser link blocked or connection refused.", "warn");
+      };
+    } catch (e: any) {
+      setTestStatus('error');
+      setTestLogs([`❌ Connection runtime issue: ${e.message}`]);
+    }
+  };
+
   const handleConnectToggle = () => {
     if (isConnected || isConnecting) {
       stopReceiver();
@@ -747,6 +808,43 @@ export default function WebReceiver() {
                 </>
               )}
             </button>
+
+            {/* Connection Diagnostic Button */}
+            {!isSimulationMode && !isConnected && !isConnecting && (
+              <div className="flex flex-col gap-2 mt-2" id="diagnostics-panel">
+                <button
+                  type="button"
+                  onClick={runDiagnostics}
+                  disabled={testStatus === 'active'}
+                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl px-4 font-mono text-[11px] font-semibold text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {testStatus === 'active' ? (
+                    <>
+                      <RefreshCw className="animate-spin text-emerald-400" size={13} /> Probing Local Connection...
+                    </>
+                  ) : (
+                    "📊 Live Connection Diagnostic Probe"
+                  )}
+                </button>
+
+                {testStatus !== 'idle' && (
+                  <div className={`p-3.5 rounded-xl border text-[11px] font-sans leading-relaxed flex flex-col gap-1 select-text ${
+                    testStatus === 'active'
+                      ? 'bg-blue-500/5 border-blue-500/20 text-blue-300'
+                      : testStatus === 'success'
+                      ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300 font-medium'
+                      : 'bg-[#18090a] border-rose-950 text-rose-300'
+                    }`}
+                  >
+                    {testLogs.map((logLine, idx) => (
+                      <div key={idx} className={idx === 0 ? "font-bold border-b border-white/5 pb-1 mb-1 text-[12px]" : "text-slate-400 pl-1 mt-0.5"}>
+                        {logLine}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Active HTTPS / Mixed Content Warning Card */}
             {typeof window !== "undefined" && window.location.protocol === "https:" && !isSimulationMode && (
